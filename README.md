@@ -33,7 +33,7 @@ El proyecto puede ejecutarse directamente desde GitHub Pages, sin necesidad de b
 
 Una vez habilitado GitHub Pages en la configuración del repositorio, estará disponible en:
 
-https://jreydep.github.io/js.flower-generator/
+https://jreydep.github.io/js.flowers-generator/
 
 ## Configuración
 
