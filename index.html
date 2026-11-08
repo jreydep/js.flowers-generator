@@ -1,0 +1,1520 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1" name="viewport">
+  <meta content="#212121" name="theme-color">
+  <meta content="Generador procedural de flores ASCII. Cada flor es única y se genera aleatoriamente a partir de una
+    semilla reproducible." name="description">
+  <title>ASCII Flowers 🌸</title>
+  <style>
+    :root {
+      color-scheme: dark;
+
+      --background: rgb(33, 33, 33);
+      --foreground: #e8e8e8;
+      --muted: #a5a5a5;
+      --border: #484848;
+
+      --button: #303030;
+      --button-hover: #3b3b3b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      background: var(--background);
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      min-height: 100svh;
+      padding: 2rem 1rem;
+      color: var(--foreground);
+    }
+
+    main {
+      width: min(100%, 1000px);
+      text-align: center;
+    }
+
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2.2rem);
+      font-weight: 650;
+      letter-spacing: .04em;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: .95rem;
+      margin: .55rem 0 1.5rem;
+      color: var(--muted);
+    }
+
+    .canvas-frame {
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 5 / 4;
+      width: 100%;
+      max-width: 800px;
+      margin-inline: auto;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
+    }
+
+    #flower-canvas,
+    #flower-output {
+      height: 100%;
+      width: 100%;
+    }
+
+    #flower-canvas {
+      display: block;
+      inset: 0;
+      position: absolute;
+      background: var(--background);
+    }
+
+    #flower-output {
+      font-family: Consolas, monospace;
+      font-size: 16px;
+      line-height: 20px;
+      letter-spacing: 1.2px;
+      tab-size: 4;
+      white-space: pre;
+      overflow: hidden;
+      overflow-wrap: normal;
+      margin: 0;
+      background: var(--background);
+      color: var(--foreground);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: .75rem;
+      margin-top: 1.25rem;
+    }
+
+    button {
+      cursor: pointer;
+      font: inherit;
+      font-weight: 600;
+      min-height: 44px;
+      padding: .7rem 1.15rem;
+      background: var(--button);
+      border: 1px solid #626262;
+      border-radius: 9px;
+      color: var(--foreground);
+      transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+    }
+
+    button:hover {
+      background: var(--button-hover);
+      border-color: #8a8a8a;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button:focus-visible {
+      outline: 2px solid #a8d8ff;
+      outline-offset: 3px;
+    }
+
+    .hint {
+      font-size: .85rem;
+      min-height: 1.4em;
+      margin: .9rem 0 0;
+      color: var(--muted);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main aria-labelledby="page-title">
+    <h1 id="page-title">ASCII Flowers</h1>
+    <p class="subtitle">Una flor. Una generación. Siempre diferente.</p>
+
+    <div aria-label="Representación de la flor generada" class="canvas-frame" role="group">
+      <canvas aria-describedby="flower-description" aria-label="Flor generada mediante arte ASCII" id="flower-canvas"
+        height="640" role="img" width="800">
+        Tu navegador no admite el elemento canvas.
+      </canvas>
+      <pre hidden id="flower-output"></pre>
+    </div>
+
+    <div class="controls">
+      <button id="generate-flower" type="button">Generar otra flor</button>
+    </div>
+
+    <p aria-live="polite" class="hint" id="flower-description">Preparando una flor…</p>
+  </main>
+
+  <script>
+    "use strict";
+
+    // Referencia al elemento Canvas, contexto gráfico 2D y dimensiones internas del lienzo.
+    const canvas = document.getElementById("flower-canvas");
+    const ctx = canvas.getContext("2d");
+    const canvasHeight = canvas.height;
+    const canvasWidth = canvas.width;
+
+    const flowerOutput = document.getElementById("flower-output");
+    const flowerDescription = document.getElementById("flower-description");
+    // - --  ---   ------------------------------------------------------------
+
+    // Configuración tipográfica y visual.
+    const FONT = {
+      family: "Consolas, monospace",
+      lineHeight: 20,
+      size: 16
+    };
+
+    const GRID = {
+      cellHeight: 20,
+      cellWidth: 10,
+
+      get columns() {
+        return Math.floor(canvasWidth / this.cellWidth);
+      },
+
+      get rows() {
+        return Math.floor(canvasHeight / this.cellHeight);
+      }
+    };
+
+    const COLORS = {
+      background: "rgb(33, 33, 33)",
+      petals: [
+        "rgb(233, 166, 197)",
+        "rgb(210, 125, 163)",
+        "rgb(180, 90, 135)",
+        "rgb(255, 182, 193)",
+        "rgb(255, 105, 180)",
+        "rgb(221, 160, 221)",
+        "rgb(186, 85, 211)",
+        "rgb(255, 218, 185)"
+      ],
+      pistil: [
+        "rgb(245, 215, 110)",
+        "rgb(255, 193, 7)",
+        "rgb(255, 224, 130)",
+        "rgb(218, 165, 32)"
+      ],
+      stem: [
+        "rgb(168, 203, 162)",
+        "rgb(120, 160, 110)",
+        "rgb(85, 139, 85)",
+        "rgb(143, 188, 143)"
+      ]
+    };
+
+    const LEAVES = {
+      characters: ["/", "\\", "<", ">", "(", ")", "~"],
+      colors: COLORS.stem,
+      irregularity: 0.08,
+      length: 4,
+      width: 2,
+      variation: {
+        length: {min: 0.80, max: 1.20},
+        width: {min: 0.80, max: 1.20},
+        angle: {min: 0.35, max: 0.95}
+      }
+    };
+
+    const PISTIL = {
+      characters: [".", "·", "*", "+", "o"],
+      colors: COLORS.pistil,
+      irregularity: 0.12,
+      variation: {
+        color: {
+          lightness: {min: 0.10, max: 0.30}
+        }
+      }
+    };
+
+    const PETALS = {
+      characters: [".", "*", "~", "^", "/", "\\", "(", ")"],
+      colors: COLORS.petals,
+      distributions: {
+        alternating: 0.5,
+        irregular: 1,
+        radial: 0
+      },
+      shapes: {
+        elongated: {
+          lengthScale: 1.15,
+          tipBias: 0.1,
+          widthPower: 1.4
+        },
+        oval: {
+          lengthScale: 1,
+          tipBias: 0,
+          widthPower: 0.65
+        },
+        pointed: {
+          lengthScale: 1,
+          tipBias: 0.45,
+          widthPower: 0.85
+        }
+      },
+      variation: {
+        angle: {min: -0.08, max: 0.08},
+        curvature: {min: -0.06, max: 0.06},
+        edge: {min: 0.04, max: 0.10},
+        color: {
+          lightness: {min: 0.30, max: 0.65},
+          darkness: {min: 0.30, max: 0.65}
+          //lightness: {min: 0.10, max: 0.25},
+          //darkness: {min: 0.10, max: 0.20}
+        },
+        length: {min: 0.85, max: 1.15},
+        width: {min: 0.85, max: 1.15}
+      }
+    };
+
+    const STEM = {
+      characters: ["|", "│", "┃", "¦"],
+      colors: COLORS.stem,
+      curvature: 2,
+      irregularity: 0.03,
+      variation: {
+        color: {
+          lightness: {min: 0.05, max: 0.20}
+        },
+        curvature: 0.5
+      }
+    };
+    // - --  ---   ------------------------------------------------------------
+
+    // Configuración del contexto.
+    ctx.font = `${FONT.size}px ${FONT.family}`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+
+    const DEBUG = new Set([
+      "boundaries",
+      "dimensions",
+      "metrics",
+      "seed",
+      "ascii"
+    ]);
+    // - --  ---   ------------------------------------------------------------
+
+    // Configuraciones de diferentes géneros de flores
+    const FLOWER_TYPES = {
+      daisy: {
+        pistil: {
+          radius: {
+            min: 2, max: 4
+          }
+        },
+        petals: {
+          count: {
+            min: 8, max: 16
+          },
+          length: {
+            min: 100, max: 150
+          },
+          width: {
+            min: 20, max: 40
+          },
+          shapes: [
+            "oval", "elongated"
+          ],
+          distributions: [
+            "radial", "alternating", "irregular"
+          ],
+          layers: {
+            min: 1,
+            max: 3,
+            lengthScale: {
+              min: 0.65, max: 0.85
+            },
+            widthScale: {
+              min: 0.75, max: 1
+            }
+          }
+        },
+        stem: {
+          length: {
+            min: 7, max: 12
+          }
+        },
+        leaves: {
+          count: {
+            min: 2, max: 5
+          }
+        }
+      },
+      sunflower: {
+        pistil: {
+          radius: {
+            min: 5, max: 7
+          }
+        },
+        petals: {
+          count: {
+            min: 20, max: 28
+          },
+          length: {
+            min: 120, max: 145
+          },
+          width: {
+            min: 18, max: 28
+          },
+          shapes: [
+            "elongated", "pointed"
+          ],
+          distributions: [
+            "radial", "alternating"
+          ],
+          layers: {
+            min: 1,
+            max: 2,
+            lengthScale: {
+              min: 0.70, max: 0.85
+            },
+            widthScale: {
+              min: 0.75, max: 0.90
+            }
+          }
+        },
+        stem: {
+          length: {
+            min: 9, max: 14
+          }
+        },
+        leaves: {
+          count: {
+            min: 2, max: 4
+          }
+        }
+      }
+    };
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Generador pseudoaleatorio determinista basado en Mulberry32.
+     * Encapsula el estado interno de la secuencia pseudoaleatoria y
+     * proporciona diferentes métodos para obtener valores aleatorios.
+     *
+     * Todas las operaciones consumen la misma secuencia, por lo que
+     * una misma semilla y un mismo orden de llamadas producen siempre
+     * los mismos resultados.
+     *
+     * @example
+     * const random = new RandomGenerator(12345);
+     *
+     * random.next();                 // Número entre 0 y 1.
+     * random.int(1, 10);             // Entero entre 1 y 10.
+     * random.range(0.5, 1.5);        // Decimal entre 0.5 y 1.5.
+     * random.pick(["A", "B", "C"]);  // Elemento aleatorio.
+     * random.chance(0.25);           // Probabilidad del 25 %.
+     * random.resolve({min: 2, max: 5}, true);
+     */
+    class RandomGenerator {
+
+      /**
+       * Estado interno de la secuencia pseudoaleatoria.
+       * Se utiliza una propiedad privada para evitar que otras partes
+       * del programa puedan modificar accidentalmente el estado.
+       * @type {number}
+       */
+      #state;
+
+      /**
+       * Inicializa el generador pseudoaleatorio.
+       * @param {number} seed Semilla inicial de la secuencia.
+       */
+      constructor(seed) {
+        this.#state = seed >>> 0;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Determina si ocurre un evento según una probabilidad.
+       * La probabilidad debe expresarse como un valor entre 0 y 1.
+       * @param {number} probability Probabilidad de éxito.
+       * @returns {boolean} Resultado de la comprobación.
+       */
+      chance(probability) {
+        if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+          throw new RangeError("La probabilidad debe estar entre 0 y 1.");
+        }
+
+        return this.next() < probability;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Obtiene un número entero pseudoaleatorio dentro de un intervalo.
+       * Ambos extremos del intervalo están incluidos.
+       * @param {number} min Valor mínimo.
+       * @param {number} max Valor máximo.
+       * @returns {number} Número entero aleatorio.
+       */
+      int(min, max) {
+        if (
+          !Number.isSafeInteger(min) ||
+          !Number.isSafeInteger(max) ||
+          min > max
+        ) {
+          throw new RangeError("El intervalo debe contener enteros seguros y válidos.");
+        }
+
+        return Math.floor(this.next() * (max - min + 1)) + min;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Obtiene el siguiente número pseudoaleatorio de la secuencia.
+       * Utiliza el algoritmo Mulberry32 para generar valores
+       * pseudoaleatorios comprendidos entre 0 (incluido) y 1 (excluido).
+       * @returns {number} Número pseudoaleatorio entre 0 y 1.
+       */
+      next() {
+        this.#state += 0x6D2B79F5;
+
+        let value = this.#state;
+
+        value = Math.imul(
+          value ^ (value >>> 15),
+          value | 1
+        );
+
+        value ^= value + Math.imul(
+          value ^ (value >>> 7),
+          value | 61
+        );
+
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Selecciona un elemento aleatorio de un array.
+       * @template T
+       * @param {Array<T>} values Array de elementos disponibles.
+       * @returns {T} Elemento seleccionado.
+       */
+      pick(values) {
+        if (!Array.isArray(values)) {
+          throw new TypeError("El valor proporcionado debe ser un array.");
+        }
+
+        if (values.length === 0) {
+          throw new RangeError("El array debe contener al menos un elemento.");
+        }
+
+        return values[Math.floor(this.next() * values.length)];
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Obtiene un número decimal pseudoaleatorio dentro de un intervalo.
+       * El valor mínimo está incluido y el máximo excluido.
+       * @param {number} min Valor mínimo.
+       * @param {number} max Valor máximo.
+       * @returns {number} Número decimal aleatorio.
+       */
+      range(min, max) {
+        if (
+          !Number.isFinite(min) ||
+          !Number.isFinite(max) ||
+          min > max
+        ) {
+          throw new RangeError("El intervalo debe contener valores numéricos finitos y válidos.");
+        }
+
+        return min + this.next() * (max - min);
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Resuelve una configuración de rango y devuelve un valor aleatorio.
+       * Permite trabajar directamente con los rangos definidos en las
+       * configuraciones morfológicas de las flores.
+       * Por defecto devuelve un número decimal. Si integer es true,
+       * devuelve un número entero.
+       * @param {{min: number, max: number}} config Configuración del rango.
+       * @param {boolean} integer Indica si el resultado debe ser entero.
+       * @returns {number} Valor aleatorio obtenido.
+       */
+      resolve(config, integer = false) {
+        if (
+          !config ||
+          !Number.isFinite(config.min) ||
+          !Number.isFinite(config.max)
+        ) {
+          throw new TypeError("La configuración debe contener min y max numéricos y finitos.");
+        }
+
+        return integer
+          ? this.int(config.min, config.max)
+          : this.range(config.min, config.max);
+      }
+      // - --  ---   ------------------------------------------------------------
+
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Administra la cuadrícula de caracteres utilizada para representar
+     * una flor mediante arte ASCII.
+     * Mantiene la estructura de datos y proporciona los métodos necesarios
+     * para modificarla, representarla en Canvas y convertirla en texto.
+     *
+     * @example
+     * const grid = new FlowerGrid(80, 25);
+     *
+     * grid.setCharacter(40, 12, "*", "rgb(255, 0, 0)", "petal");
+     * grid.render();
+     */
+    class FlowerGrid {
+
+      /**
+       * Límites de las posiciones generadas por cada componente.
+       * Incluye las posiciones que quedan fuera de la cuadrícula.
+       * @type {Object<string, {minColumn: number, maxColumn: number, minRow: number, maxRow: number}>}
+       */
+      boundsByType;
+
+      /**
+       * Matriz bidimensional que almacena los caracteres.
+       * @type {Array<Array<Object|null>>}
+       */
+      cells;
+
+      /**
+       * Número de columnas de la cuadrícula.
+       * @type {number}
+       */
+      columns;
+
+      /**
+       * Número de caracteres descartados por quedar fuera de la cuadrícula.
+       * @type {number}
+       */
+      outOfBounds;
+
+      /**
+       * Caracteres descartados según el límite excedido.
+       * @type {Object<string, number>}
+       */
+      outOfBoundsByEdge;
+
+      /**
+       * Caracteres descartados fuera de la cuadrícula, agrupados por componente.
+       * @type {Object<string, number>}
+       */
+      outOfBoundsByType;
+
+      /**
+       * Número de filas de la cuadrícula.
+       * @type {number}
+       */
+      rows;
+
+      /**
+       * Crea una nueva cuadrícula vacía.
+       * @param {number} columns Número de columnas.
+       * @param {number} rows Número de filas.
+       */
+      constructor(columns, rows) {
+        if (
+          !Number.isSafeInteger(columns) ||
+          !Number.isSafeInteger(rows) ||
+          columns <= 0 ||
+          rows <= 0
+        ) {
+          throw new RangeError("Las dimensiones deben ser enteros positivos.");
+        }
+
+        this.columns = columns;
+        this.rows = rows;
+
+        this.boundsByType = {};
+        this.outOfBounds = 0;
+        this.outOfBoundsByEdge = {
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0
+        };
+        this.outOfBoundsByType = {};
+
+        this.cells = this.create();
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Crea una matriz bidimensional inicializada con celdas vacías.
+       * @returns {Array<Array<Object|null>>}
+       */
+      create() {
+        return Array.from(
+          {length: this.rows},
+          () => Array(this.columns).fill(null)
+        );
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Representa la cuadrícula en el Canvas.
+       * @returns {void}
+       */
+      render() {
+        clearCanvas();
+
+        for (let row = 0; row < this.rows; row++) {
+          const cells = this.cells[row];
+
+          for (let column = 0; column < this.columns; column++) {
+            const cell = cells[column];
+
+            if (cell === null) continue;
+
+            drawCharacter(
+              cell.char,
+              column,
+              row,
+              cell.color
+            );
+          }
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Inserta un carácter en una posición de la cuadrícula.
+       * Por defecto no sobrescribe las posiciones ocupadas.
+       * @param {number} column Columna de destino.
+       * @param {number} row Fila de destino.
+       * @param {string} character Carácter que se insertará.
+       * @param {string} color Color del carácter.
+       * @param {string} type Tipo de componente.
+       * @param {boolean} [overwrite=false] Permite sobrescribir celdas.
+       * @returns {boolean} Indica si se ha insertado el carácter.
+       */
+      setCharacter(column, row, character, color, type, overwrite = false) {
+        if (!this.#trackBounds(column, row, type)) {
+          return false;
+        }
+
+        if (this.cells[row][column] !== null && !overwrite) {
+          return false;
+        }
+
+        this.cells[row][column] = {
+          char: character,
+          color,
+          type
+        };
+
+        return true;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Convierte la cuadrícula en una cadena de texto ASCII.
+       * @returns {string} Representación textual de la cuadrícula.
+       */
+      toString() {
+        return this.cells
+          .map(row =>
+            row.map(cell => cell?.char ?? " ").join("")
+          )
+          .join("\n");
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Actualiza los límites y contabiliza las posiciones fuera de la cuadrícula.
+       * @param {number} column Columna de la posición.
+       * @param {number} row Fila de la posición.
+       * @param {string} type Tipo de componente.
+       * @returns {boolean} Indica si la posición está dentro de la cuadrícula.
+       */
+      #trackBounds(column, row, type) {
+        this.boundsByType[type] ??= {
+          minColumn: column,
+          maxColumn: column,
+          minRow: row,
+          maxRow: row
+        };
+
+        const bounds = this.boundsByType[type];
+
+        bounds.minColumn = Math.min(bounds.minColumn, column);
+        bounds.maxColumn = Math.max(bounds.maxColumn, column);
+        bounds.minRow = Math.min(bounds.minRow, row);
+        bounds.maxRow = Math.max(bounds.maxRow, row);
+
+        const outsideLeft = column < 0;
+        const outsideRight = column >= this.columns;
+        const outsideTop = row < 0;
+        const outsideBottom = row >= this.rows;
+
+        if (outsideLeft || outsideRight || outsideTop || outsideBottom) {
+          this.outOfBounds++;
+
+          if (outsideLeft) this.outOfBoundsByEdge.left++;
+          if (outsideRight) this.outOfBoundsByEdge.right++;
+          if (outsideTop) this.outOfBoundsByEdge.top++;
+          if (outsideBottom) this.outOfBoundsByEdge.bottom++;
+
+          this.outOfBoundsByType[type] ??= 0;
+          this.outOfBoundsByType[type]++;
+        }
+
+        return !outsideLeft && !outsideRight && !outsideTop && !outsideBottom;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Representa una flor y administra su proceso de generación.
+     * Cada instancia mantiene su propia configuración, cuadrícula,
+     * posición y generador pseudoaleatorio.
+     * La semilla inicial permite reproducir la secuencia aleatoria,
+     * siempre que se mantengan la versión del algoritmo, la configuración
+     * y el orden de las operaciones.
+     *
+     * @example
+     * const flower = new Flower(FLOWER_TYPES.daisy, 123456789);
+     *
+     * flower.generate();
+     * flower.render();
+     */
+    class Flower {
+      /**
+       * Caché privada de los canales RGB de los colores utilizados.
+       * Evita analizar repetidamente una misma cadena de color
+       * cuando se generan diferentes variaciones de luminosidad.
+       * @type {Map<string, number[]|null>}
+       */
+      #colorCache = new Map();
+
+      /**
+       * Coordenada horizontal del centro de la flor.
+       * @type {number}
+       */
+      centerX;
+
+      /**
+       * Coordenada vertical del centro de la flor.
+       * @type {number}
+       */
+      centerY;
+
+      /**
+       * Cuadrícula donde se representa la flor.
+       * @type {FlowerGrid}
+       */
+      grid;
+
+      /**
+       * Radio del pistilo generado.
+       * @type {number}
+       */
+      pistilRadius;
+
+      /**
+       * Generador pseudoaleatorio de la flor.
+       * Su estado interno evoluciona con cada operación aleatoria.
+       * No debe confundirse con seed, que conserva la semilla inicial.
+       * @type {RandomGenerator}
+       */
+      random;
+
+      /**
+       * Semilla inicial utilizada para generar la flor.
+       * Es un dato de entrada que permite reproducir la secuencia
+       * pseudoaleatoria. No contiene por sí sola toda la información
+       * necesaria para reconstruir una flor.
+       * @type {number}
+       */
+      seed;
+
+      /**
+       * Coordenadas horizontales del tallo en cada posición vertical.
+       * @type {number[]}
+       */
+      stemPositions;
+
+      /**
+       * Configuración del tipo de flor.
+       * @type {Object}
+       */
+      type;
+
+      /**
+       * Crea una nueva instancia de flor.
+       * @param {Object} type Configuración del tipo de flor.
+       * @param {number} [seed] Semilla inicial para la generación.
+       */
+      constructor(type, seed = Math.floor(Math.random() * 4294967296)) {
+        this.centerX = Math.floor(GRID.columns / 2);
+        this.centerY = Math.floor(GRID.rows * 0.42);
+
+        this.grid = new FlowerGrid(GRID.columns, GRID.rows);
+
+        // Conserva la semilla inicial para poder reproducir la generación.
+        this.seed = seed;
+
+        // Cada instancia dispone de su propio generador pseudoaleatorio.
+        this.random = new RandomGenerator(this.seed);
+
+        this.stemPositions = [];
+        this.type = type;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Modifica la luminosidad de un color RGB.
+       * Los colores originales se analizan una única vez y sus canales
+       * se conservan en una caché privada para reutilizarlos.
+       * @param {string} color Color RGB original.
+       * @param {number} amount Cantidad de luminosidad que se aplica.
+       * @returns {string} Color RGB resultante.
+       */
+      adjustColorLightness(color, amount) {
+        let channels;
+
+        // Recupera los canales RGB si el color ya fue procesado.
+        if (this.#colorCache.has(color)) {
+          channels = this.#colorCache.get(color);
+        } else {
+          // Analiza el color original y extrae sus tres canales.
+          const match = color.match(/\d+/g);
+
+          channels = match && match.length >= 3
+            ? match.slice(0, 3).map(Number)
+            : null;
+
+          this.#colorCache.set(color, channels);
+        }
+
+        // Si el formato no es reconocible, conserva el color original.
+        if (!channels) {
+          return color;
+        }
+
+        // Ajusta cada canal según la luminosidad solicitada.
+        const adjust = (value) => {
+          if (amount >= 0) {
+            return Math.round(value + (255 - value) * amount);
+          }
+
+          return Math.round(value * (1 + amount));
+        };
+
+        const [red, green, blue] = channels;
+
+        return `rgb(${adjust(red)}, ${adjust(green)}, ${adjust(blue)})`;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera todos los componentes de la flor.
+       * El orden de generación determina qué componentes pueden
+       * ocupar las posiciones de la cuadrícula.
+       * @returns {void}
+       */
+      generate() {
+        this.pistilRadius = this.resolvePistilRadius();
+
+        // El centro se genera antes que los pétalos para establecer
+        // la prioridad visual de los componentes superpuestos.
+        this.generatePistil();
+        this.generatePetals();
+
+        // El tallo comienza inmediatamente después del pistilo.
+        const stemY = this.centerY + this.pistilRadius + 1;
+
+        this.generateStem(stemY);
+        this.generateLeaves(stemY);
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera las hojas del tallo.
+       * Dibuja hojas con diferentes longitudes, anchuras y orientaciones,
+       * distribuidas alternativamente a ambos lados del tallo.
+       * @param {number} startY Coordenada vertical inicial.
+       * @returns {void}
+       */
+      generateLeaves(startY) {
+        const count = this.random.resolve(this.type.leaves.count, true);
+
+        for (let i = 0; i < count; i++) {
+          // Alterna el lado de crecimiento de cada hoja.
+          const side = i % 2 === 0 ? -1 : 1;
+
+          // Selecciona una posición vertical del tallo.
+          const offsetY = this.random.int(1, 3);
+
+          const stemX = this.stemPositions[offsetY] ?? this.centerX;
+
+          // Define las dimensiones y orientación individuales.
+          const length = Math.round(
+            LEAVES.length * this.random.resolve(LEAVES.variation.length)
+          );
+
+          const width = LEAVES.width *
+            this.random.resolve(LEAVES.variation.width);
+
+          const angle = this.random.resolve(LEAVES.variation.angle);
+
+          const baseColor = this.random.pick(LEAVES.colors);
+
+          // Determina la resolución longitudinal y transversal.
+          const steps = Math.max(1, length - 1);
+          const widthSteps = Math.ceil(width / 2);
+
+          // Dirección de crecimiento de la hoja.
+          const directionX = side * Math.cos(angle);
+          const directionY = -Math.sin(angle);
+
+          // Vector perpendicular para construir su anchura.
+          const perpendicularX = Math.sin(angle);
+          const perpendicularY = side * Math.cos(angle);
+
+          // Recorre la hoja desde su base hasta la punta.
+          for (let step = 0; step <= steps; step++) {
+            const progress = step / steps;
+
+            // La hoja alcanza su máxima anchura en el centro.
+            const currentWidth = Math.sin(progress * Math.PI) * width / 2;
+
+            // Distribuye caracteres transversalmente.
+            for (let offset = -widthSteps; offset <= widthSteps; offset++) {
+              const lateral = (offset / widthSteps) * currentWidth;
+
+              const x = stemX
+                + directionX * step
+                + perpendicularX * lateral;
+
+              const y = startY + offsetY
+                + directionY * step
+                + perpendicularY * lateral;
+
+              // Introduce pequeñas irregularidades en la superficie.
+              if (this.random.chance(LEAVES.irregularity)) {
+                continue;
+              }
+
+              const character = this.random.pick(LEAVES.characters);
+
+              this.grid.setCharacter(
+                Math.round(x),
+                Math.round(y),
+                character,
+                baseColor,
+                "leaf"
+              );
+            }
+          }
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera todas las capas de pétalos.
+       * Cada capa comparte la morfología general de la flor, pero
+       * modifica progresivamente sus dimensiones y orientación.
+       * @returns {void}
+       */
+      generatePetals() {
+        const config = this.type.petals;
+
+        // Parámetros morfológicos comunes a todas las capas.
+        const count = this.random.resolve(config.count, true);
+        const length = this.random.resolve(config.length, true);
+        const width = this.random.resolve(config.width, true);
+
+        const shape = this.random.pick(config.shapes);
+        const distribution = this.random.pick(config.distributions);
+
+        const layers = this.random.resolve(config.layers, true);
+        const baseColor = this.random.pick(PETALS.colors);
+
+        // Factores de escala para las dimensiones de cada capa.
+        const lengthScale = this.random.resolve(
+          config.layers.lengthScale
+        );
+
+        const widthScale = this.random.resolve(
+          config.layers.widthScale
+        );
+
+        for (let layer = 0; layer < layers; layer++) {
+          // Reduce progresivamente las dimensiones de cada capa.
+          const currentLength = length * Math.pow(lengthScale, layer);
+          const currentWidth = width * Math.pow(widthScale, layer);
+
+          // Desplaza angularmente cada capa respecto a la anterior.
+          const layerRotation = (Math.PI / layers) * layer;
+
+          // Genera una variación cromática propia para cada capa.
+          const color = this.resolvePetalLayerColor(baseColor);
+
+          this.generatePetalLayer(
+            count,
+            currentLength,
+            currentWidth,
+            shape,
+            distribution,
+            layerRotation,
+            color
+          );
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera una capa de pétalos alrededor del centro de la flor.
+       * Cada pétalo comparte la morfología general de su capa, pero
+       * dispone de pequeñas variaciones individuales de orientación,
+       * curvatura, longitud, anchura y contorno.
+       * @param {number} count Número de pétalos de la capa.
+       * @param {number} length Longitud de los pétalos en píxeles.
+       * @param {number} width Anchura máxima de los pétalos en píxeles.
+       * @param {string} shape Forma de los pétalos.
+       * @param {string} distribution Distribución angular de los pétalos.
+       * @param {number} rotation Rotación de la capa en radianes.
+       * @param {string} color Color de los pétalos.
+       * @returns {void}
+       */
+      generatePetalLayer(count, length, width, shape, distribution, rotation, color) {
+        // Recupera la configuración morfológica y la distribución angular.
+        const shapeConfig = PETALS.shapes[shape];
+        const distributionVariation = PETALS.distributions[distribution];
+
+        // Geometría común: separación angular y distancia inicial al pistilo.
+        const angleStep = (Math.PI * 2) / count;
+        const innerRadius = (this.pistilRadius + 1) * GRID.cellHeight;
+
+        for (let i = 0; i < count; i++) {
+          // Distribución: variación angular según el patrón elegido.
+          const angleVariation = this.random.range(
+            -distributionVariation,
+            distributionVariation
+          );
+
+          // Geometría individual: orientación y curvatura de cada pétalo.
+          const individualAngle = this.random.resolve(PETALS.variation.angle);
+
+          const individualCurvature = this.random.resolve(
+            PETALS.variation.curvature
+          );
+
+          // Contorno: intensidad y fase de la ondulación de los bordes.
+          const individualEdge = this.random.resolve(PETALS.variation.edge);
+          const edgePhase = this.random.range(0, Math.PI * 2);
+
+          // Dimensiones: pequeñas diferencias individuales de longitud y anchura.
+          const lengthVariation = this.random.resolve(PETALS.variation.length);
+          const widthVariation = this.random.resolve(PETALS.variation.width);
+
+          const petalLength = length
+            * shapeConfig.lengthScale
+            * lengthVariation;
+
+          const petalWidth = width * widthVariation;
+
+          // Orientación final: combina distribución, rotación y variación individual.
+          const angle = angleStep * i
+            + rotation
+            + angleVariation
+            + individualAngle;
+
+          // Resolución espacial: determina los pasos del pétalo.
+          const steps = Math.ceil(petalLength / 5);
+          const widthSteps = Math.ceil(petalWidth / 10);
+
+          // Recorrido longitudinal: construye el pétalo desde la base hasta la punta.
+          for (let step = 0; step <= steps; step++) {
+            const progress = step / steps;
+
+            // Perfil morfológico: controla cómo aumenta y disminuye la anchura.
+            const widthProfile = Math.pow(
+              Math.sin(progress * Math.PI),
+              shapeConfig.widthPower
+            );
+
+            // Contorno: aplica una ondulación suave a los bordes.
+            const edgeVariation = 1 + Math.sin(
+              progress * Math.PI * 4 + edgePhase
+            ) * individualEdge;
+
+            const currentWidth = widthProfile
+              * (1 - shapeConfig.tipBias * progress)
+              * petalWidth
+              * edgeVariation;
+
+            // Trayectoria: calcula la distancia y curvatura actual.
+            const distance = innerRadius + progress * petalLength;
+            const currentAngle = angle + individualCurvature * progress;
+
+            // Recorrido transversal: distribuye caracteres a lo ancho del pétalo.
+            for (let offset = -widthSteps; offset <= widthSteps; offset++) {
+              const lateral = (offset / widthSteps) * (currentWidth / 2);
+
+              // Transforma las coordenadas locales a la cuadrícula.
+              const x = this.centerX
+                + (Math.cos(currentAngle) * distance
+                  - Math.sin(currentAngle) * lateral) / GRID.cellWidth;
+
+              const y = this.centerY
+                + (Math.sin(currentAngle) * distance
+                  + Math.cos(currentAngle) * lateral) / GRID.cellHeight;
+
+              // Introduce pequeñas ausencias para evitar superficies uniformes.
+              if (this.random.chance(0.08)) continue;
+
+              const character = this.random.pick(PETALS.characters);
+
+              this.grid.setCharacter(
+                Math.round(x),
+                Math.round(y),
+                character,
+                color,
+                "petal"
+              );
+            }
+          }
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera el pistilo de la flor.
+       * Selecciona un color base de la paleta y dibuja una estructura
+       * circular con pequeñas irregularidades y variaciones cromáticas.
+       * @returns {void}
+       */
+      generatePistil() {
+        const radius = this.pistilRadius;
+        const radiusSquared = radius * radius;
+
+        const baseColor = this.random.pick(PISTIL.colors);
+
+        for (let y = -radius; y <= radius; y++) {
+          for (let x = -radius; x <= radius; x++) {
+            // Descarta las posiciones que quedan fuera del círculo.
+            // Comparar cuadrados evita calcular una raíz cuadrada.
+            if (x * x + y * y > radiusSquared) continue;
+
+            // Introduce irregularidades en la superficie del pistilo.
+            if (this.random.chance(PISTIL.irregularity)) continue;
+
+            const character = this.random.pick(PISTIL.characters);
+
+            // Alterna entre aclarar y oscurecer el color base.
+            const variation = this.random.chance(0.5)
+              ? this.random.resolve(PISTIL.variation.color.lightness)
+              : -this.random.resolve(PISTIL.variation.color.lightness);
+
+            const color = this.adjustColorLightness(baseColor, variation);
+
+            this.grid.setCharacter(
+              this.centerX + x,
+              this.centerY + y,
+              character,
+              color,
+              "center"
+            );
+          }
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera el tallo de la flor.
+       * Dibuja una estructura vertical con curvatura y pequeñas
+       * irregularidades geométricas y cromáticas.
+       * @param {number} startY Coordenada vertical inicial.
+       * @returns {void}
+       */
+      generateStem(startY) {
+        const length = this.random.resolve(this.type.stem.length, true);
+        const baseColor = this.random.pick(STEM.colors);
+
+        let curvatureOffset = 0;
+
+        this.stemPositions = [];
+
+        for (let i = 0; i < length; i++) {
+          // Acumula pequeñas desviaciones para generar una curvatura orgánica.
+          curvatureOffset += this.random.range(
+            -STEM.variation.curvature,
+            STEM.variation.curvature
+          ) * 0.2;
+
+          const x = this.centerX
+            + Math.sin(i / 3) * STEM.curvature
+            + curvatureOffset;
+
+          const y = startY + i;
+
+          // Conserva la posición aunque el carácter no llegue a dibujarse.
+          this.stemPositions.push(Math.round(x));
+
+          // Introduce pequeñas ausencias en la estructura del tallo.
+          if (this.random.chance(STEM.irregularity)) continue;
+
+          // Determina la intensidad de la variación cromática.
+          const colorVariation = this.random.resolve(
+            STEM.variation.color.lightness
+          );
+
+          // Decide aleatoriamente si el color se aclara o se oscurece.
+          const variation = this.random.range(
+            -colorVariation,
+            colorVariation
+          );
+
+          const color = this.adjustColorLightness(baseColor, variation);
+          const character = this.random.pick(STEM.characters);
+
+          this.grid.setCharacter(
+            Math.round(x),
+            y,
+            character,
+            color,
+            "stem"
+          );
+        }
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Representa la flor en el canvas.
+       * @returns {void}
+       */
+      render() {
+        this.grid.render();
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Genera un color para una capa de pétalos a partir de un color base.
+       * Cada capa puede recibir una variación positiva o negativa
+       * de luminosidad para diferenciarla visualmente.
+       * @param {string} baseColor Color original de los pétalos.
+       * @returns {string} Color modificado.
+       */
+      resolvePetalLayerColor(baseColor) {
+        // Decide si la capa recibe una variación de luminosidad u oscuridad.
+        const variation = this.random.chance(0.5)
+          ? this.random.resolve(PETALS.variation.color.lightness)
+          : -this.random.resolve(PETALS.variation.color.darkness);
+
+        return this.adjustColorLightness(baseColor, variation);
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Resuelve el radio del pistilo según su configuración.
+       * @returns {number} Radio generado.
+       */
+      resolvePistilRadius() {
+        return this.random.resolve(this.type.pistil.radius, true);
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Calcula la posición horizontal del tallo a una altura determinada.
+       * Se conserva por compatibilidad, aunque la generación actual
+       * utiliza stemPositions para recuperar las coordenadas del tallo.
+       * @deprecated Utilizar stemPositions para consultar posiciones generadas.
+       * @param {number} offsetY Distancia vertical desde el inicio del tallo.
+       * @returns {number} Coordenada horizontal.
+       */
+      resolveStemPosition(offsetY) {
+        return this.centerX + Math.sin(offsetY / 3) * STEM.curvature;
+      }
+      // - --  ---   ------------------------------------------------------------
+
+      /**
+       * Devuelve la representación ASCII de la flor.
+       * @returns {string} Representación textual de la cuadrícula.
+       */
+      toString() {
+        return this.grid.toString();
+      }
+      // - --  ---   ------------------------------------------------------------
+
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Limpia las representaciones de la flor y restaura el color de fondo del Canvas.
+     * @returns {void}
+     */
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      ctx.fillStyle = COLORS.background;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      flowerOutput.textContent = "";
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Dibuja un carácter en una posición de la cuadrícula.
+     * @param {string} character Carácter que queremos dibujar.
+     * @param {number} column Columna de destino.
+     * @param {number} row Fila de destino.
+     * @param {string} color Color del carácter.
+     * @returns {void}
+     */
+    function drawCharacter(character, column, row, color) {
+      const x = column * GRID.cellWidth;
+      const y = row * GRID.cellHeight;
+
+      ctx.fillStyle = color;
+      ctx.fillText(character, x, y);
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Genera una nueva flor y la representa en el canvas.
+     * Cada ejecución crea una instancia independiente con su propia
+     * semilla y generador pseudoaleatorio.
+     * @returns {void}
+     */
+    function generateNewFlower() {
+      // Crea una nueva flor con una semilla inicial independiente.
+      const flowerTypes = Object.keys(FLOWER_TYPES);
+      const flowerType = flowerTypes[Math.floor(Math.random() * flowerTypes.length)];
+
+      const flower = new Flower(FLOWER_TYPES[flowerType]);
+
+      // Genera sus componentes y representa el resultado.
+      flower.generate();
+      flower.render();
+      flowerOutput.textContent = flower.toString();
+
+      // Conserva y muestra la semilla inicial de esta generación.
+      const seed = flower.seed;
+
+      flowerDescription.textContent = `Semilla ${seed}`;
+
+      generateMetrics(flower);
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    /**
+     * Muestra información de diagnóstico de una flor según las categorías
+     * habilitadas en DEBUG. Categorías disponibles:
+     * - ascii: muestra la representación ASCII de la flor.
+     * - boundaries: muestra los caracteres que exceden los límites de la cuadrícula.
+     * - dimensions: muestra las dimensiones ocupadas por cada componente.
+     * - metrics: muestra las métricas tipográficas del contexto Canvas.
+     * - seed: muestra la semilla inicial de la generación.
+     * @param {Flower} flower Instancia de la flor que queremos inspeccionar.
+     * @returns {void}
+     */
+    function generateMetrics(flower) {
+      // Semilla de la generación.
+      if (DEBUG.has("seed")) {
+        console.info("Semilla:", flower.seed);
+      }
+
+      // Representación ASCII.
+      if (DEBUG.has("ascii")) {
+        console.log(flower.toString());
+      }
+
+      // Dimensiones de los componentes.
+      if (DEBUG.has("dimensions")) {
+        console.info(
+          "Dimensiones por componente:",
+          flower.grid.boundsByType
+        );
+      }
+
+      // Caracteres fuera de la cuadrícula.
+      if (DEBUG.has("boundaries")) {
+        console.group("Diagnóstico de límites");
+
+        console.info(
+          "Caracteres fuera de la cuadrícula:",
+          flower.grid.outOfBounds
+        );
+
+        console.info(
+          "Caracteres fuera por componente:",
+          flower.grid.outOfBoundsByType
+        );
+
+        console.info(
+          "Caracteres fuera por límite:",
+          flower.grid.outOfBoundsByEdge
+        );
+
+        console.groupEnd();
+      }
+
+      // Métricas tipográficas.
+      if (DEBUG.has("metrics")) {
+        const metrics = ctx.measureText("M");
+
+        console.info("Métricas tipográficas:", {
+          width: metrics.width,
+          fontSize: FONT.size,
+          lineHeight: FONT.lineHeight,
+          cellWidth: GRID.cellWidth,
+          cellHeight: GRID.cellHeight
+        });
+      }
+    }
+    // - --  ---   ------------------------------------------------------------
+
+    // Generamos la flor con el "document.ready" de la web
+    // Vinculamos el botón para crear una nueva flor
+    generateNewFlower();
+
+    document
+      .getElementById("generate-flower")
+      .addEventListener("click", generateNewFlower);
+    // - --  ---   ------------------------------------------------------------
+
+  </script>
+</body>
+
+</html>
